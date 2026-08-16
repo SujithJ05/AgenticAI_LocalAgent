@@ -1,0 +1,3 @@
+{"timestamp": "2026-08-16T06:54:30.326375", "tool": "list_files", "args": {"path": "."}, "allowed": false, "reason": "path 'E:\\Sujith\\Agentic AI\\Test1 (Gemma4)' is outside sandbox 'E:\\tmp\\agent_sandbox'"}
+{"timestamp": "2026-08-16T06:54:30.331580", "tool": "read_file", "args": {"path": "C:\\Windows\\System32\\drivers\\etc\\hosts"}, "allowed": false, "reason": "path 'C:\\Windows\\System32\\drivers\\etc\\hosts' is outside sandbox 'E:\\tmp\\agent_sandbox'"}
+{"timestamp": "2026-08-16T06:56:23.493935", "tool": "read_file", "args": {"path": "E:\\tmp\\agent_sandbox\\greeting.txt"}, "allowed": true, "reason": "ok"}

@@ -1,0 +1,3 @@
+{"timestamp": "2026-08-16T06:59:35.980300", "tool": "list_files", "args": {}, "allowed": true, "reason": "ok"}
+{"timestamp": "2026-08-16T06:59:35.981360", "tool": "read_file", "args": {"path": "C:\\Windows\\System32\\drivers\\etc\\hosts"}, "allowed": false, "reason": "path 'C:\\Windows\\System32\\drivers\\etc\\hosts' is outside sandbox 'E:\\tmp\\agent_sandbox'"}
+{"timestamp": "2026-08-16T07:00:43.046896", "tool": "list_files", "args": {}, "allowed": true, "reason": "ok"}

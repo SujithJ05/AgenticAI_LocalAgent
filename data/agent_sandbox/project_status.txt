@@ -1,0 +1,133 @@
+AURORA SYNC - INTERNAL STATUS REPORT
+Prepared by: Platform Team
+Distribution: eng-all, product-leads
+
+---
+
+1. OVERVIEW
+
+Aurora Sync is our cross-device file synchronization engine. This report covers
+the v2.3 release cycle and current known issues heading into v2.4 planning.
+v2.3 shipped last month and represents the biggest architectural shift since
+the original launch: we moved the core sync loop off HTTP long-polling and
+onto a persistent WebSocket channel. Early telemetry is promising but a few
+rough edges remain, some of them serious. Please read the known issues
+section below in full before assigning v2.4 work, especially issue #114.
+
+Also, quick note: the east wing coffee machine is finally fixed. Facilities
+says it was a descaling issue. Took three tickets to get resolved but it's
+done now.
+
+2. ARCHITECTURE CHANGES
+
+The old design polled a REST endpoint every 15 seconds per device, which
+scaled poorly past a few hundred concurrent devices per account and added
+an unavoidable worst-case latency floor of one poll interval. The new
+design opens a long-lived WebSocket connection per active device and
+pushes change notifications as they happen server-side. Devices that go
+idle for more than 10 minutes are dropped to a lightweight keepalive mode
+and reconnect on next foreground event.
+
+Some notes from the migration, in no particular order: we kept the old
+REST endpoints alive behind a feature flag for now as a fallback path;
+the WebSocket gateway is a new service (aurora-ws-gw) that we had to build
+and it currently runs on the same cluster as the API gateway, which some
+people think is a mistake and should probably get its own cluster before
+we scale further; connection auth reuses the existing session tokens so
+no changes were needed on the auth side; and we're still deciding whether
+to deprecate the polling fallback entirely in v2.4 or keep it around
+longer for enterprise customers on restrictive corporate proxies that
+block long-lived WebSocket connections.
+
+3. PERFORMANCE
+
+  Metric                          v2.2 (old)      v2.3 (new)
+  ------------------------------------------------------------
+  Median sync latency              4,200 ms          210 ms
+  P95 sync latency                 9,800 ms          380 ms
+  Server CPU per 1k devices        high              ~40% lower
+  Client battery impact (mobile)   baseline          slightly worse
+
+The battery regression on mobile is expected -- a persistent connection
+costs more than periodic polling -- and is being tracked separately in
+issue #121 (see below). Everything else is a clear win. Latency numbers
+are from the last 30 days of production telemetry across all regions.
+
+4. KNOWN ISSUES
+
+Issues are listed roughly in the order they were filed, not by severity,
+so don't assume position in the list means anything.
+
+  - #109 (low, cosmetic): Dark mode sync-status icon is misaligned by a
+    couple pixels on the Windows client. Annoying but purely visual.
+
+  - #112 (medium): Reconnect storms observed when a customer's whole
+    office loses internet briefly -- hundreds of devices all try to
+    reconnect within the same few seconds and can transiently spike
+    aurora-ws-gw CPU. Mitigation (jittered backoff) is written but not
+    yet deployed.
+
+  - #114 (CRITICAL, unresolved): under a specific race condition, if two
+    devices both edit the same file while offline and then reconnect
+    within a short window of each other, the conflict resolution logic
+    can silently pick one device's version and discard the other's
+    changes -- with no conflict warning shown to the user and no
+    recoverable backup of the discarded edit. This is a real data loss
+    bug, not just an inconvenience. It's hard to reproduce (needs a tight
+    timing window) which is why it slipped through v2.3 testing, but we
+    now have three confirmed reports from beta users. This needs to be
+    the top priority for the next two weeks, ahead of any v2.4 feature
+    work.
+
+  - #118 (low): a handful of users report the "last synced" timestamp in
+    the UI occasionally shows a time a few minutes in the future, likely
+    a timezone handling bug in the client display code, not a server
+    issue. Cosmetic only.
+
+  - #121 (medium, tracked separately): mobile battery impact from the
+    persistent WebSocket connection, mentioned in the performance section
+    above. Considering a more aggressive idle-detection threshold to
+    reduce this.
+
+5. ROADMAP (DRAFT, NOT FINAL)
+
+Planning for v2.4 is still in progress and priorities may shift depending
+on how #114 investigation goes, but current draft thinking is:
+
+  - Fix #114 (data loss on offline conflict) -- non-negotiable, ships
+    before anything else regardless of what else makes the cut.
+  - Deploy the jittered backoff fix for #112.
+  - Evaluate whether to keep the REST polling fallback long-term or set
+    a deprecation date.
+  - Stretch goal, likely slips to v2.5: end-to-end encryption for synced
+    file contents, currently in early design review. Legal and security
+    both need to sign off before implementation starts, and that review
+    hasn't been scheduled yet.
+  - Also stretch goal: fix the dark mode icon alignment (#109) and the
+    future-timestamp display bug (#118), low effort, will probably just
+    get bundled into whatever release has spare cycles.
+
+Target ship window for v2.4 is currently Q4, but that is soft and depends
+heavily on how long #114 takes to fix properly -- we'd rather ship late
+than ship a rushed fix for a data-loss bug.
+
+6. TEAM NOTES
+
+Good release overall, WebSocket migration went smoother than the
+original estimate suggested, kudos to everyone who worked the on-call
+rotation during rollout week. A few people asked about the office move
+timeline -- still no firm date from facilities, will update when we hear
+more. Also a reminder that the quarterly all-hands is coming up and
+slides are due to the usual shared folder by end of week. On the
+technical side, worth calling out that the aurora-ws-gw service does not
+yet have its own on-call rotation and is currently covered by the
+general API on-call, which several people flagged as something to fix
+before it takes on more traffic.
+
+7. APPENDIX: GLOSSARY
+
+  aurora-ws-gw: the WebSocket gateway service introduced in v2.3.
+  Reconnect storm: a burst of near-simultaneous reconnect attempts from
+    many devices at once, usually after a shared network outage.
+  Conflict resolution: the logic that decides which version of a file
+    "wins" when the same file was edited on two devices independently.
